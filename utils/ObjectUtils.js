@@ -1,225 +1,260 @@
-/**
- * Copyright (c) 2022 Relyt LLC
- * Creative Commons Attribution-NonCommercial-NoDerivatives 4.0 International
- */
-
-// utils
-import ValidationUtils from './ValidationUtils.js';
-
 class ObjectUtils {
   /**
-   * @async
    * @recursive
    * @static
    * @param {Object} objectNew
    * @param {Object} objectOld
-   * @param {String[]} ignoreKeys
-   * @returns {Promise<Object>}
+   * @returns {Object} changeSet
    */
-  static async changeSet(objectNew = {}, objectOld = {}, ignoreKeys = []) {
-    const keys = Object.keys({ ...objectNew, ...objectOld });
+  static changeSet(objectNew = {}, objectOld = {}) {
+    // determine keys to iterate over
+    const keysToIterate = Object.keys({ ...objectNew, ...objectOld });
+
+    // create a changeSet of the two objects
     const changeSet = {};
-    await Promise.all(
-      keys.map(async (key) => {
-        let recursionRequired = Boolean(false);
 
-        // stringify new values
-        let newString = String('undefined');
-        if (ValidationUtils.exists(objectNew[key])) {
-          if (ValidationUtils.string(objectNew[key])) {
-            newString = String(objectNew[key]);
-          } else {
-            recursionRequired = Boolean(true);
-          }
+    // iterate over the keys
+    // recurse if either value is a nested object
+    keysToIterate.forEach((key) => {
+      const isRecursionRequired =
+        ObjectUtils.validate(objectNew[key]) ||
+        ObjectUtils.validate(objectOld[key]);
+      if (isRecursionRequired) {
+        const resursiveChangeSet = ObjectUtils.changeSet(
+          objectNew[key],
+          objectOld[key],
+        );
+        if (Object.keys(resursiveChangeSet).length > 0) {
+          changeSet[key] = { ...resursiveChangeSet };
         }
+      }
 
-        // stringify old values
-        let oldString = String('undefined');
-        if (ValidationUtils.exists(objectOld[key])) {
-          if (ValidationUtils.string(objectOld[key])) {
-            oldString = String(objectOld[key]);
-          } else {
-            recursionRequired = Boolean(true);
-          }
-        }
-
-        // recurse if needed
-        if (recursionRequired) {
-          const resursiveChangeSet = await ObjectUtils.changeSet(
-            objectNew[key],
-            objectOld[key],
-          );
-          if (Object.keys(resursiveChangeSet).length > 0) {
-            changeSet[key] = { ...resursiveChangeSet };
-          }
-        } else if (String(newString) !== String(oldString)) {
+      // if the values are not string equivalent, add them to the changeSet
+      else {
+        const newString = String(objectNew[key]);
+        const oldString = String(objectOld[key]);
+        if (newString !== oldString) {
           changeSet[key] = {};
-          if (ValidationUtils.exists(objectNew[key])) {
+          if (newString !== 'undefined') {
             changeSet[key].new = objectNew[key];
           }
-          if (ValidationUtils.exists(objectOld[key])) {
+          if (oldString !== 'undefined') {
             changeSet[key].old = objectOld[key];
           }
         }
-      }),
-    );
+      }
+    });
     return changeSet;
   }
 
   /**
-   * @async
    * @recursive
    * @static
    * @param {Object} object
-   * @param {String[]} ignoreKeys
-   * @returns {Promise<Number>}
+   * @returns {Number} count
    */
-  static async deepEntriesCount(object = {}, ignoreKeys = []) {
+  static deepEntriesCount(object = {}) {
+    // determine keys to iterate over
+    const keysToIterate = Object.keys(object);
+
+    // create a entry count of the object's keys
     let entriesCount = Number('0');
-    const keys = Object.keys(object);
-    if (keys.length > 0) {
-      const recursiveEntriesCounts = await Promise.all(
-        keys.map(async (key) => {
-          if (!ignoreKeys.includes(key)) {
-            entriesCount++;
-            if (object[key] instanceof Object) {
-              return ObjectUtils.deepEntriesCount(object[key], ignoreKeys);
-            }
-          }
-          return Number('0');
-        }),
-      );
-      recursiveEntriesCounts.forEach((count) => (entriesCount += count));
-    }
+
+    // iterate over the keys, mapping them to a count of their entries
+    keysToIterate
+      .map((key) => {
+        if (ObjectUtils.validate(object[key])) {
+          return ObjectUtils.deepEntriesCount(object[key]);
+        } else {
+          return Number('1');
+        }
+      })
+      .forEach((count) => (entriesCount += count));
     return entriesCount;
   }
 
   /**
-   * @async
    * @recursive
    * @static
    * @param {Object} object
-   * @param {String[]} filterKeys
-   * @param {Boolean} isExclusive
-   * @returns {Promise<Object>}
+   * @param {String[]} keysToFilter
+   * @param {Boolean} isWhitelist
+   * @returns {Object} filteredObject
    */
-  static async deepFilterKeys(
-    object,
-    filterKeys = [],
-    isExclusive = Boolean(false),
-  ) {
-    const filteredObject = {};
-    await Promise.all(
-      Object.entries(object).map(async ([key, value]) => {
-        if (
-          (isExclusive && !filterKeys.includes(key)) ||
-          (!isExclusive && filterKeys.includes(key))
-        ) {
-          if (value instanceof Object) {
-            filteredObject[key] = await ObjectUtils.deepFilterKeys(
-              value,
-              filterKeys,
-              isExclusive,
-            );
-          } else {
-            filteredObject[key] = value;
-          }
-        }
-      }),
-    );
-    return filteredObject;
-  }
-
-  /**
-   * @async
-   * @recursive
-   * @static
-   * @param {Object} object
-   * @param {String[]} filterValues
-   * @param {Boolean} isExclusive
-   * @returns {Promise<Object>}
-   */
-  static async deepFilterValues(
-    object,
-    filterValues = [],
-    isExclusive = Boolean(false),
-  ) {
-    const filteredObject = {};
-    await Promise.all(
-      Object.entries(object).map(async ([key, value]) => {
-        if (
-          (isExclusive && !filterValues.includes(value)) ||
-          (!isExclusive && filterValues.includes(value))
-        ) {
-          if (value instanceof Object) {
-            filteredObject[key] = await ObjectUtils.deepFilterValues(
-              value,
-              filterValues,
-              isExclusive,
-            );
-          } else {
-            filteredObject[key] = value;
-          }
-        }
-      }),
-    );
-    return filteredObject;
-  }
-
-  /**
-   * @async
-   * @recursive
-   * @static
-   * @param {Object} object
-   * @param {String[]} ignoreKeys
-   * @param {Boolean} ignoreDuplicates
-   * @returns {Promise<Array<any>>}
-   */
-  static async deepValues(
+  static deepFilterKeys(
     object = {},
-    ignoreKeys = [],
-    ignoreDuplicates = Boolean(false),
+    keysToFilter = [],
+    isWhitelist = Boolean(true),
   ) {
-    const finalValues = [];
-    const entries = Object.entries(object);
-    if (entries.length > 0) {
-      const recursiveValues = await Promise.all(
-        entries.map(async ([key, value]) => {
-          if (!ignoreKeys.includes(key)) {
-            if (value instanceof Object) {
-              return ObjectUtils.deepValues(
-                value,
-                ignoreKeys,
-                ignoreDuplicates,
-              );
-            } else {
-              return [value];
-            }
-          } else {
-            return null;
-          }
-        }),
-      );
+    // determine keys to iterate over
+    const keys = Object.keys(object);
+    const keysToIterate = isWhitelist
+      ? keys.filter((key) => keysToFilter.includes(key))
+      : keys.filter((key) => !keysToFilter.includes(key));
 
-      await Promise.all(
-        recursiveValues.map(async (values) => {
-          if (values !== null) {
-            return Promise.all(
-              values.map(async (value) => {
-                if (value !== null) {
-                  const isDuplicate = Boolean(finalValues.includes(value));
-                  const isIgnored = Boolean(ignoreDuplicates && isDuplicate);
-                  if (!isIgnored) {
-                    finalValues.push(value);
-                  }
-                }
-              }),
-            );
-          }
-        }),
+    // create a filtered object
+    const filteredObject = {};
+
+    // iterate over the keys, adding them to the filtered object
+    keysToIterate.forEach((key) => {
+      if (ObjectUtils.validate(object[key])) {
+        filteredObject[key] = ObjectUtils.deepFilterKeys(
+          object[key],
+          keysToFilter,
+          isWhitelist,
+        );
+      } else {
+        filteredObject[key] = object[key];
+      }
+    });
+    return filteredObject;
+  }
+
+  /**
+   * @recursive
+   * @static
+   * @param {Object} object
+   * @param {String[]} valuesToFilter
+   * @param {Boolean} isWhitelist
+   * @returns {Object}
+   */
+  static deepFilterValues(
+    object = {},
+    valuesToFilter = [],
+    isWhitelist = Boolean(true),
+  ) {
+    // determine values to iterate over in the object
+    const keysToIterate = Object.keys(object);
+
+    // create a filtered object
+    const filteredObject = {};
+
+    // iterate over the keys, adding their value pairs to the filtered object
+    keysToIterate.forEach((key) => {
+      if (ObjectUtils.validate(object[key])) {
+        const deepValues = ObjectUtils.deepFilterValues(
+          object[key],
+          valuesToFilter,
+          isWhitelist,
+        );
+        if (Object.keys(deepValues).length > 0) {
+          filteredObject[key] = deepValues;
+        }
+      } else if (
+        (isWhitelist && valuesToFilter.includes(object[key])) ||
+        (!isWhitelist && !valuesToFilter.includes(object[key]))
+      ) {
+        filteredObject[key] = object[key];
+      }
+    });
+    return filteredObject;
+  }
+
+  /**
+   * @recursive
+   * @static
+   * @param {Object} object
+   * @param {Boolean} ignoreDuplicates
+   * @returns {Array<any>} values
+   */
+  static deepValues(object = {}, ignoreDuplicates = Boolean(false)) {
+    // determine keys to iterate over
+    const keysToIterate = Object.keys(object);
+
+    // create a values array
+    const values = [];
+
+    // iterate over the keys, tracking corresponding values
+    keysToIterate.forEach((key) => {
+      if (ObjectUtils.validate(object[key])) {
+        ObjectUtils.deepValues(object[key], ignoreDuplicates).forEach((value) =>
+          values.push(value),
+        );
+      } else {
+        values.push(object[key]);
+      }
+    });
+
+    // ignore duplicates if specified
+    return ignoreDuplicates ? Array.from(new Set(values)) : values;
+  }
+
+  /**
+   * @recursive
+   * @static
+   * @param {Object} object
+   * @param {String} delimiter
+   * @returns {Object} flattenedObject
+   * @throws {Error} if the delimiter specified is not allowed
+   * Allowed delimiters are: .!@#$%^&*-_=+|~
+   * (see ObjectUtils.FLATTEN_DELIMITERS_ALLOWED)
+   */
+  static flatten(object = {}, delimiter = String('.')) {
+    if (!ObjectUtils.FLATTEN_DELIMITERS_ALLOWED.includes(delimiter)) {
+      const delimiters = ObjectUtils.FLATTEN_DELIMITERS_ALLOWED.join('');
+      throw new Error(
+        `[ObjectUtils] flatten() - delimiter must be one of the following characters: "${delimiters}"`
       );
     }
-    return finalValues;
+
+    // determine keys to iterate over
+    const keysToIterate = Object.keys(object);
+
+    // create a flattened object
+    const flattenedObject = {};
+
+    // iterate over the keys, adding them to the flattened object
+    keysToIterate.forEach((key) => {
+      if (ObjectUtils.validate(object[key])) {
+        const flattenedValue = ObjectUtils.flatten(object[key], delimiter);
+        Object.keys(flattenedValue).forEach((flattenedKey) => {
+          const delimitedKey = String(`${key}${delimiter}${flattenedKey}`);
+          flattenedObject[delimitedKey] = flattenedValue[flattenedKey];
+        });
+      } else {
+        flattenedObject[key] = object[key];
+      }
+    });
+    return flattenedObject;
+  }
+
+  /**
+   * @static
+   * @param {Object} value
+   * @returns {Boolean} isValid
+   */
+  static validate(value) {
+    try {
+      return (
+        value !== null &&
+        value !== undefined &&
+        value instanceof Object &&
+        String(value) !== String('null') &&
+        String(value) !== String('undefined') &&
+        String(value) === String('[object Object]')
+      );
+    } catch {
+      return Boolean(false);
+    }
   }
 }
+
+ObjectUtils.FLATTEN_DELIMITERS_ALLOWED = [
+  '.',
+  '!',
+  '@',
+  '#',
+  '$',
+  '%',
+  '^',
+  '&',
+  '*',
+  '-',
+  '_',
+  '=',
+  '+',
+  '|',
+  '~',
+];
+
 export default ObjectUtils;
